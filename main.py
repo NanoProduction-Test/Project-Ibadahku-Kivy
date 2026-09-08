@@ -1,7 +1,9 @@
 import datetime
 import re
+import threading
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.config import Config
 from kivy.graphics import Color, Rectangle
 from kivy.properties import StringProperty
@@ -11,6 +13,7 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import ScreenManager, Screen
 
 import database as db
+import prayertimes
 
 # jendela ukuran layar HP
 Config.set("graphics", "width", "400")
@@ -20,10 +23,11 @@ HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Ahad"]
 BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni",
          "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
-# jadwal sholat dummy — akan DIGANTI data API otomatis di Minggu 2
-JADWAL_SHOLAT = [
-    ("Subuh", "04:30"), ("Dzuhur", "11:50"), ("Ashar", "15:10"),
-    ("Maghrib", "17:45"), ("Isya", "18:55"),
+KOTA_DEFAULT = "Jakarta"
+DAFTAR_KOTA = [
+    "Jakarta", "Bandung", "Bekasi", "Bogor", "Tangerang", "Depok",
+    "Semarang", "Yogyakarta", "Surabaya", "Malang",
+    "Medan", "Palembang", "Makassar", "Denpasar",
 ]
 
 
@@ -68,19 +72,107 @@ class BarisTimeline(BoxLayout):
 
 class HomeScreen(Screen):
     tanggal = StringProperty("")
+    countdown = StringProperty("Memuat jadwal...")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.jadwal = None            # [("Subuh","04:35"), ...]
+        self.jam_event = None         # timer countdown
+        self.sedang_memuat = False    # thread API sedang jalan?
 
     def on_enter(self):
         hari = datetime.date.today()
         self.tanggal = (f"{HARI[hari.weekday()]}, {hari.day} "
                         f"{BULAN[hari.month - 1]} {hari.year}")
+
+        # 1) coba cache dulu (offline-friendly)
+        kota = db.ambil_pengaturan("kota", KOTA_DEFAULT)
+        cache = db.ambil_jadwal(kota, hari.isoformat())
+        if cache:
+            self.jadwal = cache
+        elif not self.sedang_memuat:
+            # 2) tidak ada cache → ambil dari API di THREAD TERPISAH
+            self.sedang_memuat = True
+            self.countdown = "Memuat jadwal..."
+            threading.Thread(
+                target=self.ambil_dari_api, args=(kota,), daemon=True
+            ).start()
+
         self.muat_timeline()
+        self.mulai_countdown()
+
+    def on_leave(self):
+        # matikan timer biar tidak dobel saat kembali ke layar ini
+        if self.jam_event:
+            self.jam_event.cancel()
+            self.jam_event = None
+
+    # ---------- jadwal sholat ----------
+
+    def ambil_dari_api(self, kota):
+        """Berjalan di thread KEDUA. Jaringan di sini, bukan di thread utama."""
+        try:
+            jadwal = prayertimes.ambil_jadwal(kota)
+        except Exception:
+            jadwal = None
+        # kirim hasil balik ke thread utama untuk mengubah tampilan
+        Clock.schedule_once(lambda dt: self.jadwal_tiba(jadwal))
+
+    def jadwal_tiba(self, jadwal):
+        self.sedang_memuat = False
+        if jadwal:
+            kota = db.ambil_pengaturan("kota", KOTA_DEFAULT)
+            db.simpan_jadwal(kota, datetime.date.today().isoformat(), jadwal)
+            self.jadwal = jadwal
+            self.muat_timeline()
+            self.perbarui_countdown()
+        else:
+            self.countdown = "Jadwal gagal dimuat (cek internet / kota)"
+
+    # ---------- countdown ----------
+
+    def mulai_countdown(self):
+        if self.jam_event:            # sudah jalan? jangan dobel
+            return
+        self.perbarui_countdown()
+        self.jam_event = Clock.schedule_interval(self.perbarui_countdown, 30)
+
+    def perbarui_countdown(self, *args):
+        if not self.jadwal:
+            return                    # masih memuat / gagal
+        nama, target, besok = self.waktu_berikutnya()
+        selisih = int((target - datetime.datetime.now()).total_seconds())
+        if selisih < 0:
+            selisih = 0
+        j = selisih // 3600
+        m = (selisih % 3600) // 60
+        keterangan = " (besok)" if besok else ""
+        self.countdown = f"Menuju {nama}{keterangan} - {j}j {m:02d}m"
+
+    def waktu_berikutnya(self):
+        """Cari waktu sholat berikutnya dari sekarang."""
+        sekarang = datetime.datetime.now()
+        for nama, jam in self.jadwal:
+            j, m = map(int, jam.split(":"))
+            target = sekarang.replace(hour=j, minute=m, second=0, microsecond=0)
+            if target > sekarang:
+                return nama, target, False
+        # sudah lewat Isya → targetnya Subuh besok
+        nama, jam = self.jadwal[0]
+        j, m = map(int, jam.split(":"))
+        target = sekarang.replace(hour=j, minute=m, second=0, microsecond=0)
+        return nama, target + datetime.timedelta(days=1), True
+
+    # ---------- timeline ----------
 
     def muat_timeline(self):
         daftar = self.ids.timeline
         daftar.clear_widgets()
 
-        # gabungkan jadwal sholat (dummy) + kegiatan milikmu, urut berdasar jam
-        item = [(jam, nama, (0.85, 0.93, 0.87, 1)) for nama, jam in JADWAL_SHOLAT]
+        item = []
+        if self.jadwal:
+            item = [(jam, nama, (0.85, 0.93, 0.87, 1))
+                    for nama, jam in self.jadwal]
         for k in db.kegiatan_hari_ini(HARI[datetime.date.today().weekday()]):
             item.append((k["jam"], k["nama"], (0.93, 0.93, 0.95, 1)))
         item.sort(key=lambda x: x[0])
@@ -130,7 +222,6 @@ class TambahScreen(Screen):
         nama = self.ids.inp_nama.text.strip()
         jam = self.ids.inp_jam.text.strip()
 
-        # ---- validasi ----
         if not nama:
             self.ids.lbl_pesan.text = "Nama kegiatan belum diisi"
             return
@@ -142,12 +233,10 @@ class TambahScreen(Screen):
         if j > 23 or m > 59:
             self.ids.lbl_pesan.text = "Jam tidak valid (00:00 - 23:59)"
             return
-        # ------------------
 
-        jam = f"{j:02d}:{m:02d}"   # "6:30" -> "06:30" biar urutan timeline rapi
+        jam = f"{j:02d}:{m:02d}"
         db.tambah(nama, jam, self.ids.spin_hari.text, self.ids.spin_kategori.text)
 
-        # kosongkan form untuk input berikutnya
         self.ids.inp_nama.text = ""
         self.ids.inp_jam.text = ""
         self.ids.lbl_pesan.text = ""
@@ -159,7 +248,17 @@ class TimerScreen(Screen):
 
 
 class PengaturanScreen(Screen):
-    pass    # diisi di Minggu 2 (pilih kota)
+    def on_enter(self):
+        spin = self.ids.spin_kota
+        if not spin.values:
+            spin.values = DAFTAR_KOTA
+        spin.text = db.ambil_pengaturan("kota", KOTA_DEFAULT)
+
+    def simpan_kota(self):
+        kota = self.ids.spin_kota.text
+        db.simpan_pengaturan("kota", kota)
+        self.ids.lbl_status.text = (f"Kota tersimpan: {kota}\n"
+                                    "Jadwal baru dimuat di Beranda")
 
 
 class IbadahKuApp(App):

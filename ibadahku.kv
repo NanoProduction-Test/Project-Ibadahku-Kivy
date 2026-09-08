@@ -4,8 +4,8 @@
         BoxLayout:
             orientation: "vertical"
             size_hint_y: None
-            height: 92
-            padding: [0, 14]
+            height: 120
+            padding: [0, 10]
             canvas.before:
                 Color:
                     rgba: 0.13, 0.45, 0.36, 1
@@ -14,13 +14,18 @@
                     size: self.size
             Label:
                 text: "IbadahKu"
-                font_size: 30
+                font_size: 26
                 bold: True
                 color: 1, 1, 1, 1
             Label:
                 text: root.tanggal
-                font_size: 14
+                font_size: 13
                 color: 0.88, 0.96, 0.91, 1
+            Label:
+                text: root.countdown
+                font_size: 17
+                bold: True
+                color: 1, 0.95, 0.8, 1
         ScrollView:
             GridLayout:
                 id: timeline
@@ -159,13 +164,48 @@
 <PengaturanScreen>:
     BoxLayout:
         orientation: "vertical"
-        padding: 30
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            canvas.before:
+                Color:
+                    rgba: 0.13, 0.45, 0.36, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: "Pengaturan"
+                font_size: 22
+                bold: True
+                color: 1, 1, 1, 1
+        Widget:
         Label:
-            text: "Pengaturan"
-            font_size: 26
-            bold: True
+            text: "Pilih kota untuk jadwal sholat:"
+            size_hint_y: None
+            height: 30
+        Spinner:
+            id: spin_kota
+            text: "Jakarta"
+            size_hint_y: None
+            height: 48
         Label:
-            text: "Pemilihan kota jadwal sholat menyusul di Minggu 2 :)"
-            font_size: 16
+            text: "(kota lain bisa ditambah sendiri di DAFTAR_KOTA, main.py)"
+            font_size: 12
+            italic: True
+            size_hint_y: None
+            height: 28
+            color: 0.4, 0.4, 0.4, 1
+        Widget:
+        Label:
+            id: lbl_status
+            text: ""
+            color: 0.13, 0.45, 0.36, 1
+            font_size: 14
+        Widget:
+        Button:
+            text: "Simpan Kota"
+            size_hint_y: None
+            height: 52
+            on_release: root.simpan_kota()
         Widget:
         Navigasi:
