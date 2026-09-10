@@ -27,13 +27,51 @@
                 bold: True
                 color: 1, 0.95, 0.8, 1
         ScrollView:
-            GridLayout:
-                id: timeline
-                cols: 1
+            BoxLayout:
+                orientation: "vertical"
                 size_hint_y: None
                 height: self.minimum_height
-                spacing: 6
-                padding: [10, 10]
+                GridLayout:
+                    id: timeline
+                    cols: 1
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: 6
+                    padding: [10, 10]
+                Widget:
+                    size_hint_y: None
+                    height: 16
+                Label:
+                    text: "Ceklis Ibadah Hari Ini"
+                    font_size: 20
+                    bold: True
+                    size_hint_y: None
+                    height: 32
+                    color: 0.13, 0.35, 0.28, 1
+                Label:
+                    text: root.teks_streak
+                    font_size: 14
+                    size_hint_y: None
+                    height: 24
+                    color: 0.2, 0.45, 0.35, 1
+                GridLayout:
+                    id: grid_ceklis
+                    cols: 1
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: 6
+                    padding: [10, 0]
+                Button:
+                    text: "+ Tambah Item Ceklis"
+                    size_hint_y: None
+                    height: 44
+                    font_size: 14
+                    background_color: 0.85, 0.93, 0.87, 1
+                    color: 0.13, 0.35, 0.28, 1
+                    on_release: root.buka_popup_ceklis()
+                Widget:
+                    size_hint_y: None
+                    height: 14
         Navigasi:
 
 <KegiatanScreen>:
@@ -150,14 +188,69 @@
 <TimerScreen>:
     BoxLayout:
         orientation: "vertical"
-        padding: 30
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            canvas.before:
+                Color:
+                    rgba: 0.13, 0.45, 0.36, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: "Timer Sesi Ibadah"
+                font_size: 22
+                bold: True
+                color: 1, 1, 1, 1
+        Widget:
         Label:
-            text: "Timer Sesi Ibadah"
-            font_size: 26
+            text: root.waktu
+            font_size: 64
             bold: True
+        ProgressBar:
+            id: progres
+            max: 1
+            value: 0
+            size_hint_y: None
+            height: 18
+        Widget:
         Label:
-            text: "Fitur ini menyusul di Minggu 3 :)"
-            font_size: 16
+            text: "Durasi (menit)"
+            size_hint_y: None
+            height: 26
+        Spinner:
+            id: spin_durasi
+            text: "15"
+            values: "1,5,10,15,20,30,45,60"
+            size_hint_y: None
+            height: 48
+        Widget:
+        Label:
+            text: root.status
+            font_size: 15
+            color: 0.2, 0.45, 0.35, 1
+            size_hint_y: None
+            height: 40
+        BoxLayout:
+            size_hint_y: None
+            height: 52
+            spacing: 10
+            Button:
+                text: "Mulai"
+                on_release: root.mulai()
+            Button:
+                text: "Jeda"
+                on_release: root.jeda()
+            Button:
+                text: "Ulang"
+                on_release: root.ulang()
+        Widget:
+        Label:
+            text: root.total_hari_ini
+            font_size: 14
+            color: 0.35, 0.35, 0.35, 1
+            size_hint_y: None
+            height: 30
         Widget:
         Navigasi:
 

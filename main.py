@@ -10,7 +10,9 @@ from kivy.properties import StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.textinput import TextInput
 
 import database as db
 import prayertimes
@@ -29,6 +31,22 @@ DAFTAR_KOTA = [
     "Semarang", "Yogyakarta", "Surabaya", "Malang",
     "Medan", "Palembang", "Makassar", "Denpasar",
 ]
+
+# notifikasi bersifat opsional: gagal/absen tidak boleh membuat app crash
+try:
+    from plyer import notification
+except ImportError:
+    notification = None
+
+
+def kirim_notif(judul, pesan):
+    if notification is None:
+        return
+    try:
+        notification.notify(title=judul, message=pesan,
+                            app_name="IbadahKu", timeout=10)
+    except Exception:
+        pass
 
 
 class Navigasi(BoxLayout):
@@ -70,28 +88,102 @@ class BarisTimeline(BoxLayout):
         self.bg.size = self.size
 
 
+class BarisCeklis(BoxLayout):
+    """Satu baris ceklis: tombol centang + nama + tombol hapus."""
+
+    def __init__(self, data, selesai, layar, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.height = 48
+        self.padding = [10, 4]
+        self.item_id = data["id"]
+        self.layar = layar
+        self.selesai = selesai
+
+        with self.canvas.before:
+            self.instr_warna = Color(rgba=self.warna_baris())
+            self.bg = Rectangle(pos=self.pos, size=self.size)
+        self.bind(pos=self.perbarui_bg, size=self.perbarui_bg)
+
+        self.tombol = Button(text="[x]" if selesai else "[ ]",
+                             size_hint_x=0.14, font_size=16)
+        self.tombol.bind(on_release=self.tekan)
+        self.add_widget(self.tombol)
+
+        self.add_widget(Label(text=data["nama"], size_hint_x=0.68, font_size=16))
+
+        hapus = Button(text="Hapus", size_hint_x=0.18, font_size=12)
+        hapus.bind(on_release=lambda b: self.hapus())
+        self.add_widget(hapus)
+
+    def warna_baris(self):
+        return (0.78, 0.9, 0.8, 1) if self.selesai else (0.93, 0.93, 0.95, 1)
+
+    def perbarui_bg(self, *args):
+        self.bg.pos = self.pos
+        self.bg.size = self.size
+
+    def tekan(self, *_):
+        db.toggle_ceklis(self.item_id, datetime.date.today().isoformat())
+        self.layar.muat_ceklis()          # refresh baris + streak + hitungan
+
+    def hapus(self):
+        db.hapus_item_ceklis(self.item_id)
+        self.layar.muat_ceklis()
+
+
+class PopupCeklis(Popup):
+    """Form kecil melayang untuk menambah item ceklis."""
+
+    def __init__(self, layar, **kwargs):
+        super().__init__(**kwargs)
+        self.layar = layar
+        self.title = "Tambah Item Ceklis"
+        self.size_hint = (0.9, None)
+        self.height = 210
+
+        kotak = BoxLayout(orientation="vertical", padding=15, spacing=10)
+        kotak.add_widget(Label(text="Nama item ceklis:",
+                               size_hint_y=None, height=26))
+        self.input = TextInput(hint_text="contoh: Sholat dhuha",
+                               multiline=False, size_hint_y=None, height=44)
+        kotak.add_widget(self.input)
+        tombol = Button(text="Simpan", size_hint_y=None, height=48)
+        tombol.bind(on_release=self.simpan)
+        kotak.add_widget(tombol)
+        self.content = kotak
+
+    def simpan(self, *_):
+        nama = self.input.text.strip()
+        if nama:
+            db.tambah_item_ceklis(nama)
+        self.dismiss()
+        self.layar.muat_ceklis()
+
+
 class HomeScreen(Screen):
     tanggal = StringProperty("")
     countdown = StringProperty("Memuat jadwal...")
+    teks_streak = StringProperty("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.jadwal = None            # [("Subuh","04:35"), ...]
-        self.jam_event = None         # timer countdown
-        self.sedang_memuat = False    # thread API sedang jalan?
+        self.jadwal = None
+        self.jam_event = None
+        self.sedang_memuat = False
+        self.kegiatan_hari_ini = []   # untuk notifikasi "waktunya..."
+        self.notif_terkirim = set()
 
     def on_enter(self):
         hari = datetime.date.today()
         self.tanggal = (f"{HARI[hari.weekday()]}, {hari.day} "
                         f"{BULAN[hari.month - 1]} {hari.year}")
 
-        # 1) coba cache dulu (offline-friendly)
         kota = db.ambil_pengaturan("kota", KOTA_DEFAULT)
         cache = db.ambil_jadwal(kota, hari.isoformat())
         if cache:
             self.jadwal = cache
         elif not self.sedang_memuat:
-            # 2) tidak ada cache → ambil dari API di THREAD TERPISAH
             self.sedang_memuat = True
             self.countdown = "Memuat jadwal..."
             threading.Thread(
@@ -99,10 +191,10 @@ class HomeScreen(Screen):
             ).start()
 
         self.muat_timeline()
+        self.muat_ceklis()
         self.mulai_countdown()
 
     def on_leave(self):
-        # matikan timer biar tidak dobel saat kembali ke layar ini
         if self.jam_event:
             self.jam_event.cancel()
             self.jam_event = None
@@ -110,15 +202,14 @@ class HomeScreen(Screen):
     # ---------- jadwal sholat ----------
 
     def ambil_dari_api(self, kota):
-        """Berjalan di thread KEDUA. Jaringan di sini, bukan di thread utama."""
+        jadwal, pesan_error = None, ""
         try:
             jadwal = prayertimes.ambil_jadwal(kota)
-        except Exception:
-            jadwal = None
-        # kirim hasil balik ke thread utama untuk mengubah tampilan
-        Clock.schedule_once(lambda dt: self.jadwal_tiba(jadwal))
+        except Exception as e:
+            pesan_error = f"{type(e).__name__}: {e}"
+        Clock.schedule_once(lambda dt: self.jadwal_tiba(jadwal, pesan_error))
 
-    def jadwal_tiba(self, jadwal):
+    def jadwal_tiba(self, jadwal, pesan_error=""):
         self.sedang_memuat = False
         if jadwal:
             kota = db.ambil_pengaturan("kota", KOTA_DEFAULT)
@@ -127,19 +218,20 @@ class HomeScreen(Screen):
             self.muat_timeline()
             self.perbarui_countdown()
         else:
-            self.countdown = "Jadwal gagal dimuat (cek internet / kota)"
+            self.countdown = f"Gagal: {pesan_error}"
 
-    # ---------- countdown ----------
+    # ---------- countdown + notifikasi kegiatan ----------
 
     def mulai_countdown(self):
-        if self.jam_event:            # sudah jalan? jangan dobel
+        if self.jam_event:
             return
         self.perbarui_countdown()
         self.jam_event = Clock.schedule_interval(self.perbarui_countdown, 30)
 
     def perbarui_countdown(self, *args):
+        self.cek_notif_kegiatan()
         if not self.jadwal:
-            return                    # masih memuat / gagal
+            return
         nama, target, besok = self.waktu_berikutnya()
         selisih = int((target - datetime.datetime.now()).total_seconds())
         if selisih < 0:
@@ -150,35 +242,64 @@ class HomeScreen(Screen):
         self.countdown = f"Menuju {nama}{keterangan} - {j}j {m:02d}m"
 
     def waktu_berikutnya(self):
-        """Cari waktu sholat berikutnya dari sekarang."""
         sekarang = datetime.datetime.now()
         for nama, jam in self.jadwal:
             j, m = map(int, jam.split(":"))
             target = sekarang.replace(hour=j, minute=m, second=0, microsecond=0)
             if target > sekarang:
                 return nama, target, False
-        # sudah lewat Isya → targetnya Subuh besok
         nama, jam = self.jadwal[0]
         j, m = map(int, jam.split(":"))
         target = sekarang.replace(hour=j, minute=m, second=0, microsecond=0)
         return nama, target + datetime.timedelta(days=1), True
 
-    # ---------- timeline ----------
+    def cek_notif_kegiatan(self):
+        """Dipanggil tiap 30 detik: kegiatan yang jamnya tiba -> notifikasi."""
+        sekarang = datetime.datetime.now().strftime("%H:%M")
+        for id_k, nama, jam in self.kegiatan_hari_ini:
+            if jam == sekarang and id_k not in self.notif_terkirim:
+                self.notif_terkirim.add(id_k)
+                kirim_notif("IbadahKu", f"Waktunya: {nama}")
+
+    # ---------- timeline & ceklis ----------
 
     def muat_timeline(self):
         daftar = self.ids.timeline
         daftar.clear_widgets()
 
         item = []
+        self.kegiatan_hari_ini = []
         if self.jadwal:
             item = [(jam, nama, (0.85, 0.93, 0.87, 1))
                     for nama, jam in self.jadwal]
         for k in db.kegiatan_hari_ini(HARI[datetime.date.today().weekday()]):
             item.append((k["jam"], k["nama"], (0.93, 0.93, 0.95, 1)))
+            self.kegiatan_hari_ini.append((k["id"], k["nama"], k["jam"]))
         item.sort(key=lambda x: x[0])
 
         for jam, nama, warna in item:
             daftar.add_widget(BarisTimeline(jam, nama, warna))
+
+    def muat_ceklis(self):
+        grid = self.ids.grid_ceklis
+        grid.clear_widgets()
+        hari = datetime.date.today().isoformat()
+        status = db.status_ceklis(hari)
+
+        selesai = total = 0
+        for c in db.semua_ceklis():
+            total += 1
+            done = status.get(c["id"], False)
+            if done:
+                selesai += 1
+            grid.add_widget(BarisCeklis(c, done, self))
+
+        streak = db.hitung_streak()
+        self.teks_streak = (f"Streak: {streak} hari  "
+                            f" Selesai hari ini: {selesai}/{total}")
+
+    def buka_popup_ceklis(self):
+        PopupCeklis(self).open()
 
 
 class BarisKegiatan(BoxLayout):
@@ -244,7 +365,69 @@ class TambahScreen(Screen):
 
 
 class TimerScreen(Screen):
-    pass    # diisi di Minggu 3
+    waktu = StringProperty("15:00")
+    status = StringProperty("Pilih durasi lalu tekan Mulai")
+    total_hari_ini = StringProperty("")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.sisa = 0        # detik tersisa
+        self.total = 1       # total detik sesi (diisi saat mulai)
+        self.event = None    # penunjuk Clock yang berjalan
+
+    def on_enter(self):
+        self.perbarui_total()
+
+    def perbarui_total(self):
+        menit = db.total_timer_hari_ini()
+        self.total_hari_ini = f"Total sesi hari ini: {menit} menit"
+
+    def mulai(self):
+        if self.event:                       # sedang berjalan -> abaikan
+            return
+        if self.sisa <= 0:                   # sesi baru: baca durasi
+            menit = int(self.ids.spin_durasi.text)
+            self.total = menit * 60
+            self.sisa = self.total
+        self.status = "Sesi berjalan..."
+        self.tampilkan()
+        self.event = Clock.schedule_interval(self.detik, 1)
+
+    def jeda(self):
+        if self.event:
+            self.event.cancel()
+            self.event = None
+            self.status = "Jeda - tekan Mulai untuk lanjut"
+
+    def ulang(self):
+        self.jeda()
+        self.sisa = 0
+        self.waktu = "00:00"
+        self.status = "Direset. Pilih durasi lalu Mulai"
+        self.ids.progres.value = 0
+
+    def detik(self, dt):
+        self.sisa -= 1
+        if self.sisa <= 0:
+            self.selesai_sesi()
+            return
+        self.tampilkan()
+
+    def tampilkan(self):
+        m = self.sisa // 60
+        s = self.sisa % 60
+        self.waktu = f"{m:02d}:{s:02d}"
+        self.ids.progres.value = 1 - self.sisa / self.total
+
+    def selesai_sesi(self):
+        self.jeda()
+        self.sisa = 0
+        self.waktu = "00:00"
+        self.ids.progres.value = 1
+        self.status = "Alhamdulillah, sesi selesai!"
+        db.catat_timer(self.total // 60)
+        self.perbarui_total()
+        kirim_notif("IbadahKu", "Sesi ibadah selesai. Alhamdulillah!")
 
 
 class PengaturanScreen(Screen):

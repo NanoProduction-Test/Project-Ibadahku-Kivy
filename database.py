@@ -1,8 +1,15 @@
 import sqlite3
+from datetime import date, timedelta
 
 DB = "ibadahku.db"
 
 NAMA_WAKTU = ["Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya"]
+
+CEKLIS_DEFAULT = [
+    "Sholat Subuh", "Sholat Dzuhur", "Sholat Ashar",
+    "Sholat Maghrib", "Sholat Isya",
+    "Tilawah Qur'an", "Dzikir pagi", "Dzikir petang",
+]
 
 
 def buat_tabel():
@@ -32,9 +39,35 @@ def buat_tabel():
                 PRIMARY KEY (kota, tanggal)
             )"""
         )
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS ceklis (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                nama TEXT NOT NULL,
+                aktif INTEGER NOT NULL DEFAULT 1
+            )"""
+        )
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS ceklis_log (
+                tanggal TEXT NOT NULL,
+                item_id INTEGER NOT NULL,
+                selesai INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (tanggal, item_id)
+            )"""
+        )
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS timer_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                tanggal TEXT NOT NULL,
+                menit   INTEGER NOT NULL
+            )"""
+        )
+        # isi item ceklis bawaan — hanya saat tabel masih kosong
+        if con.execute("SELECT COUNT(*) FROM ceklis").fetchone()[0] == 0:
+            for nama in CEKLIS_DEFAULT:
+                con.execute("INSERT INTO ceklis (nama) VALUES (?)", (nama,))
 
 
-# ---------------- kegiatan (sama seperti Minggu 1) ----------------
+# ---------------- kegiatan (sama seperti sebelumnya) ----------------
 
 def tambah(nama, jam, hari, kategori):
     with sqlite3.connect(DB) as con:
@@ -66,7 +99,7 @@ def hapus(id_kegiatan):
         con.execute("DELETE FROM kegiatan WHERE id = ?", (id_kegiatan,))
 
 
-# ---------------- pengaturan (BARU) ----------------
+# ---------------- pengaturan (sama seperti sebelumnya) ----------------
 
 def simpan_pengaturan(kunci, nilai):
     with sqlite3.connect(DB) as con:
@@ -84,10 +117,9 @@ def ambil_pengaturan(kunci, default=None):
         return baris[0] if baris else default
 
 
-# ---------------- cache jadwal sholat (BARU) ----------------
+# ---------------- cache jadwal sholat (sama seperti sebelumnya) ----------------
 
 def simpan_jadwal(kota, tanggal, jadwal):
-    """jadwal = [("Subuh", "04:35"), ...] disimpan per kota & tanggal."""
     jam = [waktu for _, waktu in jadwal]
     with sqlite3.connect(DB) as con:
         con.execute(
@@ -97,7 +129,6 @@ def simpan_jadwal(kota, tanggal, jadwal):
 
 
 def ambil_jadwal(kota, tanggal):
-    """Return list (nama, jam), atau None kalau belum ada di cache."""
     with sqlite3.connect(DB) as con:
         baris = con.execute(
             "SELECT subuh, dzuhur, ashar, maghrib, isya FROM jadwal_cache"
@@ -107,3 +138,78 @@ def ambil_jadwal(kota, tanggal):
     if baris is None:
         return None
     return list(zip(NAMA_WAKTU, baris))
+
+
+# ---------------- ceklis harian (BARU) ----------------
+
+def semua_ceklis():
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        return con.execute(
+            "SELECT * FROM ceklis WHERE aktif = 1 ORDER BY id").fetchall()
+
+
+def status_ceklis(tanggal):
+    """Return dict {item_id: True/False} untuk satu tanggal."""
+    with sqlite3.connect(DB) as con:
+        baris = con.execute(
+            "SELECT item_id, selesai FROM ceklis_log WHERE tanggal = ?",
+            (tanggal,),
+        ).fetchall()
+    return {b[0]: bool(b[1]) for b in baris}
+
+
+def toggle_ceklis(item_id, tanggal):
+    """Balik status satu item (selesai <-> belum) pada satu tanggal."""
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            "INSERT OR IGNORE INTO ceklis_log (tanggal, item_id, selesai)"
+            " VALUES (?, ?, 0)", (tanggal, item_id))
+        con.execute(
+            "UPDATE ceklis_log SET selesai = 1 - selesai"
+            " WHERE tanggal = ? AND item_id = ?", (tanggal, item_id))
+
+
+def tambah_item_ceklis(nama):
+    with sqlite3.connect(DB) as con:
+        con.execute("INSERT INTO ceklis (nama) VALUES (?)", (nama,))
+
+
+def hapus_item_ceklis(item_id):
+    """Item disembunyikan (aktif = 0), riwayat log tetap utuh."""
+    with sqlite3.connect(DB) as con:
+        con.execute("UPDATE ceklis SET aktif = 0 WHERE id = ?", (item_id,))
+
+
+def hitung_streak():
+    """Berapa hari berturut-turut (minimal 1 item selesai) sampai hari ini."""
+    with sqlite3.connect(DB) as con:
+        baris = con.execute(
+            "SELECT DISTINCT tanggal FROM ceklis_log WHERE selesai = 1"
+            " ORDER BY tanggal DESC").fetchall()
+    tanggal_ada = {b[0] for b in baris}
+    hari = date.today()
+    if hari.isoformat() not in tanggal_ada:
+        hari -= timedelta(days=1)   # hari ini belum ada -> mulai cek dari kemarin
+    streak = 0
+    while hari.isoformat() in tanggal_ada:
+        streak += 1
+        hari -= timedelta(days=1)
+    return streak
+
+
+# ---------------- timer sesi ibadah (BARU) ----------------
+
+def catat_timer(menit):
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            "INSERT INTO timer_log (tanggal, menit) VALUES (?, ?)",
+            (date.today().isoformat(), menit))
+
+
+def total_timer_hari_ini():
+    with sqlite3.connect(DB) as con:
+        baris = con.execute(
+            "SELECT COALESCE(SUM(menit), 0) FROM timer_log WHERE tanggal = ?",
+            (date.today().isoformat(),)).fetchone()
+    return baris[0]
