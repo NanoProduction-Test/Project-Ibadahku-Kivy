@@ -5,8 +5,9 @@ import threading
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.config import Config
-from kivy.graphics import Color, Rectangle
-from kivy.properties import StringProperty
+from kivy.core.window import Window
+from kivy.graphics import Color, RoundedRectangle
+from kivy.properties import ListProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -32,7 +33,6 @@ DAFTAR_KOTA = [
     "Medan", "Palembang", "Makassar", "Denpasar",
 ]
 
-# notifikasi bersifat opsional: gagal/absen tidak boleh membuat app crash
 try:
     from plyer import notification
 except ImportError:
@@ -49,6 +49,80 @@ def kirim_notif(judul, pesan):
         pass
 
 
+class Tema:
+    """Pusat semua warna IbadahKu. Ubah di sini, seluruh app ikut."""
+
+    terang = {
+        "latar":      (0.95, 0.96, 0.95, 1),
+        "kartu":      (1, 1, 1, 1),
+        "utama":      (0.13, 0.45, 0.36, 1),
+        "utama_muda": (0.85, 0.93, 0.87, 1),
+        "netral":     (0.93, 0.93, 0.95, 1),
+        "nav":        (0.88, 0.92, 0.89, 1),
+        "teks":       (0.13, 0.15, 0.14, 1),
+        "teks_pudar": (0.45, 0.48, 0.46, 1),
+        "aksen":      (1, 0.95, 0.8, 1),
+        "putih":      (1, 1, 1, 1),
+    }
+    gelap = {
+        "latar":      (0.09, 0.11, 0.10, 1),
+        "kartu":      (0.16, 0.19, 0.18, 1),
+        "utama":      (0.16, 0.40, 0.33, 1),
+        "utama_muda": (0.22, 0.35, 0.29, 1),
+        "netral":     (0.20, 0.22, 0.21, 1),
+        "nav":        (0.20, 0.24, 0.22, 1),
+        "teks":       (0.92, 0.95, 0.93, 1),
+        "teks_pudar": (0.60, 0.65, 0.62, 1),
+        "aksen":      (0.95, 0.87, 0.6, 1),
+        "putih":      (1, 1, 1, 1),
+    }
+    warna = terang
+
+    @classmethod
+    def muat(cls):
+        gelap = db.ambil_pengaturan("mode_gelap", "0") == "1"
+        cls.warna = cls.gelap if gelap else cls.terang
+
+
+class Tombol(Button):
+    """Button rata (flat) yang warnanya diambil dari Tema."""
+
+    gaya = StringProperty("utama")          # kunci warna latar
+    gaya_teks = StringProperty("putih")     # kunci warna tulisan
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ""
+        self.background_down = ""
+        self.perbarui_warna()
+
+    def on_gaya(self, *args):
+        self.perbarui_warna()
+
+    def on_gaya_teks(self, *args):
+        self.perbarui_warna()
+
+    def perbarui_warna(self):
+        self.background_color = Tema.warna[self.gaya]
+        self.color = Tema.warna[self.gaya_teks]
+
+
+class Kartu(BoxLayout):
+    """Panel dengan latar warna dan sudut membulat."""
+
+    def __init__(self, warna=None, radius=12, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            self.instr_warna = Color(rgba=warna or Tema.warna["kartu"])
+            self.bg = RoundedRectangle(pos=self.pos, size=self.size,
+                                       radius=[radius])
+        self.bind(pos=self.perbarui_bg, size=self.perbarui_bg)
+
+    def perbarui_bg(self, *args):
+        self.bg.pos = self.pos
+        self.bg.size = self.size
+
+
 class Navigasi(BoxLayout):
     """Bar navigasi bawah, dipakai di semua layar."""
 
@@ -56,10 +130,14 @@ class Navigasi(BoxLayout):
         super().__init__(**kwargs)
         self.size_hint_y = None
         self.height = 58
+        self.padding = [4, 4]
+        self.spacing = 4
         menu = [("Beranda", "home"), ("Kegiatan", "kegiatan"),
-                ("Timer", "timer"), ("Pengaturan", "pengaturan")]
+                ("Timer", "timer"), ("Tasbih", "tasbih"),
+                ("Lainnya", "pengaturan")]
         for judul, nama_screen in menu:
-            btn = Button(text=judul, font_size=13)
+            btn = Tombol(text=judul, font_size=12, gaya="nav",
+                         gaya_teks="teks")
             btn.bind(on_release=lambda b, s=nama_screen: self.pindah(s))
             self.add_widget(btn)
 
@@ -69,26 +147,21 @@ class Navigasi(BoxLayout):
             sm.current = nama
 
 
-class BarisTimeline(BoxLayout):
+class BarisTimeline(Kartu):
     """Satu baris timeline di Beranda: jam + nama kegiatan."""
 
     def __init__(self, jam, nama, warna, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(warna=warna, **kwargs)
         self.size_hint_y = None
         self.height = 46
-        with self.canvas.before:
-            Color(*warna)
-            self.bg = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=self.perbarui_bg, size=self.perbarui_bg)
-        self.add_widget(Label(text=jam, size_hint_x=0.25, bold=True))
-        self.add_widget(Label(text=nama, size_hint_x=0.75))
-
-    def perbarui_bg(self, *args):
-        self.bg.pos = self.pos
-        self.bg.size = self.size
+        self.padding = [14, 0]
+        self.add_widget(Label(text=jam, size_hint_x=0.25, bold=True,
+                              color=Tema.warna["teks"]))
+        self.add_widget(Label(text=nama, size_hint_x=0.75,
+                              color=Tema.warna["teks"]))
 
 
-class BarisCeklis(BoxLayout):
+class BarisCeklis(Kartu):
     """Satu baris ceklis: tombol centang + nama + tombol hapus."""
 
     def __init__(self, data, selesai, layar, **kwargs):
@@ -99,33 +172,30 @@ class BarisCeklis(BoxLayout):
         self.item_id = data["id"]
         self.layar = layar
         self.selesai = selesai
+        self.instr_warna.rgba = self.warna_baris()
 
-        with self.canvas.before:
-            self.instr_warna = Color(rgba=self.warna_baris())
-            self.bg = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=self.perbarui_bg, size=self.perbarui_bg)
-
-        self.tombol = Button(text="[x]" if selesai else "[ ]",
-                             size_hint_x=0.14, font_size=16)
+        self.tombol = Tombol(text="[x]" if selesai else "[ ]",
+                             gaya="utama" if selesai else "netral",
+                             gaya_teks="putih" if selesai else "teks",
+                             size_hint_x=0.14, font_size=15)
         self.tombol.bind(on_release=self.tekan)
         self.add_widget(self.tombol)
 
-        self.add_widget(Label(text=data["nama"], size_hint_x=0.68, font_size=16))
+        self.add_widget(Label(text=data["nama"], size_hint_x=0.68,
+                              font_size=16, color=Tema.warna["teks"]))
 
-        hapus = Button(text="Hapus", size_hint_x=0.18, font_size=12)
+        hapus = Tombol(text="Hapus", gaya="netral", gaya_teks="teks_pudar",
+                       size_hint_x=0.18, font_size=12)
         hapus.bind(on_release=lambda b: self.hapus())
         self.add_widget(hapus)
 
     def warna_baris(self):
-        return (0.78, 0.9, 0.8, 1) if self.selesai else (0.93, 0.93, 0.95, 1)
-
-    def perbarui_bg(self, *args):
-        self.bg.pos = self.pos
-        self.bg.size = self.size
+        return (Tema.warna["utama_muda"] if self.selesai
+                else Tema.warna["netral"])
 
     def tekan(self, *_):
         db.toggle_ceklis(self.item_id, datetime.date.today().isoformat())
-        self.layar.muat_ceklis()          # refresh baris + streak + hitungan
+        self.layar.muat_ceklis()
 
     def hapus(self):
         db.hapus_item_ceklis(self.item_id)
@@ -148,7 +218,7 @@ class PopupCeklis(Popup):
         self.input = TextInput(hint_text="contoh: Sholat dhuha",
                                multiline=False, size_hint_y=None, height=44)
         kotak.add_widget(self.input)
-        tombol = Button(text="Simpan", size_hint_y=None, height=48)
+        tombol = Tombol(text="Simpan", size_hint_y=None, height=48)
         tombol.bind(on_release=self.simpan)
         kotak.add_widget(tombol)
         self.content = kotak
@@ -171,7 +241,7 @@ class HomeScreen(Screen):
         self.jadwal = None
         self.jam_event = None
         self.sedang_memuat = False
-        self.kegiatan_hari_ini = []   # untuk notifikasi "waktunya..."
+        self.kegiatan_hari_ini = []
         self.notif_terkirim = set()
 
     def on_enter(self):
@@ -254,7 +324,6 @@ class HomeScreen(Screen):
         return nama, target + datetime.timedelta(days=1), True
 
     def cek_notif_kegiatan(self):
-        """Dipanggil tiap 30 detik: kegiatan yang jamnya tiba -> notifikasi."""
         sekarang = datetime.datetime.now().strftime("%H:%M")
         for id_k, nama, jam in self.kegiatan_hari_ini:
             if jam == sekarang and id_k not in self.notif_terkirim:
@@ -270,10 +339,10 @@ class HomeScreen(Screen):
         item = []
         self.kegiatan_hari_ini = []
         if self.jadwal:
-            item = [(jam, nama, (0.85, 0.93, 0.87, 1))
+            item = [(jam, nama, Tema.warna["utama_muda"])
                     for nama, jam in self.jadwal]
         for k in db.kegiatan_hari_ini(HARI[datetime.date.today().weekday()]):
-            item.append((k["jam"], k["nama"], (0.93, 0.93, 0.95, 1)))
+            item.append((k["jam"], k["nama"], Tema.warna["netral"]))
             self.kegiatan_hari_ini.append((k["id"], k["nama"], k["jam"]))
         item.sort(key=lambda x: x[0])
 
@@ -302,23 +371,25 @@ class HomeScreen(Screen):
         PopupCeklis(self).open()
 
 
-class BarisKegiatan(BoxLayout):
+class BarisKegiatan(Kartu):
     """Satu baris kegiatan di layar Kegiatan + tombol hapus."""
 
     def __init__(self, data, layar, **kwargs):
         super().__init__(**kwargs)
         self.size_hint_y = None
-        self.height = 62
-        self.padding = [10, 6]
+        self.height = 64
+        self.padding = [14, 8]
 
         info = BoxLayout(orientation="vertical")
-        info.add_widget(Label(text=data["nama"], bold=True, font_size=17))
+        info.add_widget(Label(text=data["nama"], bold=True, font_size=17,
+                              color=Tema.warna["teks"]))
         info.add_widget(Label(
             text=f"{data['jam']}  •  {data['hari']}  •  {data['kategori']}",
-            font_size=13))
+            font_size=13, color=Tema.warna["teks_pudar"]))
         self.add_widget(info)
 
-        btn = Button(text="Hapus", size_hint_x=0.25)
+        btn = Tombol(text="Hapus", gaya="netral", gaya_teks="teks_pudar",
+                     size_hint_x=0.22, font_size=12)
         btn.bind(on_release=lambda b: self.hapus(data["id"], layar))
         self.add_widget(btn)
 
@@ -371,9 +442,9 @@ class TimerScreen(Screen):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.sisa = 0        # detik tersisa
-        self.total = 1       # total detik sesi (diisi saat mulai)
-        self.event = None    # penunjuk Clock yang berjalan
+        self.sisa = 0
+        self.total = 1
+        self.event = None
 
     def on_enter(self):
         self.perbarui_total()
@@ -383,9 +454,9 @@ class TimerScreen(Screen):
         self.total_hari_ini = f"Total sesi hari ini: {menit} menit"
 
     def mulai(self):
-        if self.event:                       # sedang berjalan -> abaikan
+        if self.event:
             return
-        if self.sisa <= 0:                   # sesi baru: baca durasi
+        if self.sisa <= 0:
             menit = int(self.ids.spin_durasi.text)
             self.total = menit * 60
             self.sisa = self.total
@@ -430,30 +501,149 @@ class TimerScreen(Screen):
         kirim_notif("IbadahKu", "Sesi ibadah selesai. Alhamdulillah!")
 
 
+class TasbihScreen(Screen):
+    hitungan_label = StringProperty("0")
+    progres_label = StringProperty("")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.hitungan = 0
+        self.tercatat = 0
+
+    def on_enter(self):
+        hari = datetime.date.today().isoformat()
+        self.hitungan = db.ambil_tasbih(hari)
+        self.tercatat = self.hitungan
+        self.perbarui()
+
+    def on_leave(self):
+        self.simpan()
+
+    def simpan(self):
+        delta = self.hitungan - self.tercatat
+        if delta > 0:
+            db.simpan_tasbih(datetime.date.today().isoformat(), delta)
+            self.tercatat = self.hitungan
+
+    def tap(self):
+        self.hitungan += 1
+        teks_target = self.ids.spin_target.text
+        if teks_target != "Bebas":
+            target = int(teks_target)
+            if self.hitungan == target:
+                dzikir = self.ids.spin_dzikir.text
+                kirim_notif("IbadahKu",
+                            f"MasyaAllah, {target}x {dzikir} selesai!")
+        self.perbarui()
+
+    def ulang(self):
+        self.hitungan = 0
+        self.tercatat = 0
+        db.reset_tasbih(datetime.date.today().isoformat())
+        self.perbarui()
+
+    def perbarui(self, *args):
+        try:
+            teks_target = self.ids.spin_target.text
+        except AttributeError:
+            return                       # ids belum siap saat layout dibangun
+        self.hitungan_label = str(self.hitungan)
+        if teks_target == "Bebas":
+            self.progres_label = "Mode bebas (tanpa target)"
+        else:
+            self.progres_label = f"{self.hitungan} / {teks_target}"
+
+
+class StatistikScreen(Screen):
+    def on_enter(self):
+        self.muat_statistik()
+
+    def muat_statistik(self):
+        grid = self.ids.grid_stat
+        grid.clear_widgets()
+
+        hari = datetime.date.today().isoformat()
+        awal = (datetime.date.today()
+                - datetime.timedelta(days=6)).isoformat()
+
+        streak = db.hitung_streak()
+        status = db.status_ceklis(hari)
+        selesai = sum(1 for v in status.values() if v)
+        aktif = len(db.semua_ceklis())
+        menit_hari = db.total_timer_hari_ini()
+        tasbih_hari = db.ambil_tasbih(hari)
+        menit_minggu, tasbih_minggu, hari_aktif = db.ringkasan_minggu(awal)
+        total_menit, total_tasbih = db.total_keseluruhan()
+
+        self.baris(grid, "Streak ceklis", f"{streak} hari beruntun")
+        self.baris(grid, "Ceklis hari ini",
+                   f"{selesai} dari {aktif} item selesai")
+        self.baris(grid, "Timer hari ini", f"{menit_hari} menit")
+        self.baris(grid, "Tasbih hari ini", f"{tasbih_hari} kali")
+        self.baris(grid, "7 hari terakhir",
+                   f"{menit_minggu} menit  •  {tasbih_minggu}x dzikir  •  "
+                   f"aktif {hari_aktif} hari")
+        self.baris(grid, "Total keseluruhan",
+                   f"{total_menit} menit  •  {total_tasbih}x dzikir")
+
+    def baris(self, grid, judul, isi):
+        kartu = Kartu(size_hint_y=None, height=72, padding=[16, 8])
+        kotak = BoxLayout(orientation="vertical")
+        kotak.add_widget(Label(text=judul, font_size=13,
+                               color=Tema.warna["teks_pudar"],
+                               size_hint_y=None, height=22))
+        kotak.add_widget(Label(text=isi, font_size=16, bold=True,
+                               color=Tema.warna["teks"]))
+        kartu.add_widget(kotak)
+        grid.add_widget(kartu)
+
+
 class PengaturanScreen(Screen):
     def on_enter(self):
+        self._sedang_muat = True          # cegah switch "menyala sendiri"
         spin = self.ids.spin_kota
         if not spin.values:
             spin.values = DAFTAR_KOTA
         spin.text = db.ambil_pengaturan("kota", KOTA_DEFAULT)
+        self.ids.sw_gelap.active = db.ambil_pengaturan("mode_gelap", "0") == "1"
+        self._sedang_muat = False
 
     def simpan_kota(self):
         kota = self.ids.spin_kota.text
         db.simpan_pengaturan("kota", kota)
-        self.ids.lbl_status.text = (f"Kota tersimpan: {kota}\n"
-                                    "Jadwal baru dimuat di Beranda")
+        self.ids.lbl_status.text = f"Kota tersimpan: {kota}"
+
+    def ubah_mode(self, switch, aktif):
+        if getattr(self, "_sedang_muat", False):
+            return
+        db.simpan_pengaturan("mode_gelap", "1" if aktif else "0")
+        self.ids.lbl_status.text = ("Tersimpan! Buka ulang aplikasi "
+                                    "untuk melihat temanya")
 
 
 class IbadahKuApp(App):
     title = "IbadahKu"
 
+    # warna yang bisa dibaca oleh file .kv
+    warna_utama = ListProperty((0.13, 0.45, 0.36, 1))
+    warna_teks = ListProperty((0.13, 0.15, 0.14, 1))
+    warna_pudar = ListProperty((0.45, 0.48, 0.46, 1))
+
     def build(self):
         db.buat_tabel()
+        Tema.muat()
+        Window.clearcolor = Tema.warna["latar"]   # latar jendela ikut tema
+        self.warna_utama = Tema.warna["utama"]
+        self.warna_teks = Tema.warna["teks"]
+        self.warna_pudar = Tema.warna["teks_pudar"]
+
         sm = ScreenManager()
         sm.add_widget(HomeScreen(name="home"))
         sm.add_widget(KegiatanScreen(name="kegiatan"))
         sm.add_widget(TambahScreen(name="tambah"))
         sm.add_widget(TimerScreen(name="timer"))
+        sm.add_widget(TasbihScreen(name="tasbih"))
+        sm.add_widget(StatistikScreen(name="statistik"))
         sm.add_widget(PengaturanScreen(name="pengaturan"))
         return sm
 

@@ -8,7 +8,7 @@
             padding: [0, 10]
             canvas.before:
                 Color:
-                    rgba: 0.13, 0.45, 0.36, 1
+                    rgba: app.warna_utama
                 Rectangle:
                     pos: self.pos
                     size: self.size
@@ -47,13 +47,13 @@
                     bold: True
                     size_hint_y: None
                     height: 32
-                    color: 0.13, 0.35, 0.28, 1
+                    color: app.warna_teks
                 Label:
                     text: root.teks_streak
                     font_size: 14
                     size_hint_y: None
                     height: 24
-                    color: 0.2, 0.45, 0.35, 1
+                    color: app.warna_utama
                 GridLayout:
                     id: grid_ceklis
                     cols: 1
@@ -61,13 +61,13 @@
                     height: self.minimum_height
                     spacing: 6
                     padding: [10, 0]
-                Button:
+                Tombol:
                     text: "+ Tambah Item Ceklis"
+                    gaya: "utama_muda"
+                    gaya_teks: "teks"
                     size_hint_y: None
                     height: 44
                     font_size: 14
-                    background_color: 0.85, 0.93, 0.87, 1
-                    color: 0.13, 0.35, 0.28, 1
                     on_release: root.buka_popup_ceklis()
                 Widget:
                     size_hint_y: None
@@ -84,7 +84,7 @@
             spacing: 10
             canvas.before:
                 Color:
-                    rgba: 0.13, 0.45, 0.36, 1
+                    rgba: app.warna_utama
                 Rectangle:
                     pos: self.pos
                     size: self.size
@@ -93,9 +93,10 @@
                 font_size: 22
                 bold: True
                 color: 1, 1, 1, 1
-            Button:
+            Tombol:
                 text: "+ Tambah"
                 size_hint_x: 0.28
+                font_size: 13
                 on_release: root.manager.current = "tambah"
         ScrollView:
             GridLayout:
@@ -117,7 +118,7 @@
             height: 60
             canvas.before:
                 Color:
-                    rgba: 0.13, 0.45, 0.36, 1
+                    rgba: app.warna_utama
                 Rectangle:
                     pos: self.pos
                     size: self.size
@@ -133,6 +134,7 @@
             height: 26
             halign: "left"
             text_size: self.width, None
+            color: app.warna_teks
         TextInput:
             id: inp_nama
             multiline: False
@@ -145,6 +147,7 @@
             height: 26
             halign: "left"
             text_size: self.width, None
+            color: app.warna_teks
         TextInput:
             id: inp_jam
             multiline: False
@@ -155,6 +158,7 @@
             text: "Hari"
             size_hint_y: None
             height: 26
+            color: app.warna_teks
         Spinner:
             id: spin_hari
             text: "Setiap hari"
@@ -163,6 +167,7 @@
             text: "Kategori"
             size_hint_y: None
             height: 26
+            color: app.warna_teks
         Spinner:
             id: spin_kategori
             text: "Ibadah"
@@ -178,12 +183,16 @@
             size_hint_y: None
             height: 52
             spacing: 10
-            Button:
+            Tombol:
                 text: "Batal"
+                gaya: "netral"
+                gaya_teks: "teks"
                 on_release: root.manager.current = "kegiatan"
-            Button:
+            Tombol:
                 text: "Simpan"
                 on_release: root.simpan()
+        Widget:
+        Navigasi:
 
 <TimerScreen>:
     BoxLayout:
@@ -193,7 +202,7 @@
             height: 60
             canvas.before:
                 Color:
-                    rgba: 0.13, 0.45, 0.36, 1
+                    rgba: app.warna_utama
                 Rectangle:
                     pos: self.pos
                     size: self.size
@@ -207,6 +216,7 @@
             text: root.waktu
             font_size: 64
             bold: True
+            color: app.warna_teks
         ProgressBar:
             id: progres
             max: 1
@@ -218,6 +228,8 @@
             text: "Durasi (menit)"
             size_hint_y: None
             height: 26
+            color: app.warna_pudar
+            font_size: 13
         Spinner:
             id: spin_durasi
             text: "15"
@@ -228,31 +240,142 @@
         Label:
             text: root.status
             font_size: 15
-            color: 0.2, 0.45, 0.35, 1
+            color: app.warna_utama
             size_hint_y: None
             height: 40
         BoxLayout:
             size_hint_y: None
             height: 52
             spacing: 10
-            Button:
+            Tombol:
                 text: "Mulai"
                 on_release: root.mulai()
-            Button:
+            Tombol:
                 text: "Jeda"
+                gaya: "netral"
+                gaya_teks: "teks"
                 on_release: root.jeda()
-            Button:
+            Tombol:
                 text: "Ulang"
+                gaya: "netral"
+                gaya_teks: "teks"
                 on_release: root.ulang()
         Widget:
         Label:
             text: root.total_hari_ini
             font_size: 14
-            color: 0.35, 0.35, 0.35, 1
+            color: app.warna_pudar
             size_hint_y: None
             height: 30
         Widget:
         Navigasi:
+
+<TasbihScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            canvas.before:
+                Color:
+                    rgba: app.warna_utama
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: "Tasbih Digital"
+                font_size: 22
+                bold: True
+                color: 1, 1, 1, 1
+        Widget:
+        Label:
+            text: "Dzikir"
+            size_hint_y: None
+            height: 24
+            color: app.warna_pudar
+            font_size: 13
+        Spinner:
+            id: spin_dzikir
+            text: "Subhanallah"
+            values: "Subhanallah,Alhamdulillah,Allahu Akbar,Astaghfirullah,La ilaha illallah"
+            size_hint_y: None
+            height: 44
+        Label:
+            text: "Target"
+            size_hint_y: None
+            height: 24
+            color: app.warna_pudar
+            font_size: 13
+        Spinner:
+            id: spin_target
+            text: "33"
+            values: "33,99,100,1000,Bebas"
+            size_hint_y: None
+            height: 44
+            on_text: root.perbarui()
+        Widget:
+        Button:
+            text: root.hitungan_label
+            font_size: 72
+            bold: True
+            color: 1, 1, 1, 1
+            background_normal: ""
+            background_down: ""
+            background_color: app.warna_utama
+            size_hint_y: None
+            height: 230
+            on_press: root.tap()
+        Label:
+            text: root.progres_label
+            font_size: 16
+            color: app.warna_teks
+            size_hint_y: None
+            height: 30
+        Widget:
+        Tombol:
+            text: "Ulang Hitungan Hari Ini"
+            gaya: "netral"
+            gaya_teks: "teks"
+            size_hint_y: None
+            height: 48
+            font_size: 13
+            on_release: root.ulang()
+        Widget:
+        Navigasi:
+
+<StatistikScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            padding: [10, 0]
+            canvas.before:
+                Color:
+                    rgba: app.warna_utama
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Tombol:
+                text: "< Kembali"
+                gaya: "aksen"
+                gaya_teks: "teks"
+                size_hint_x: 0.32
+                font_size: 13
+                on_release: root.manager.current = "pengaturan"
+            Label:
+                text: "Statistik"
+                font_size: 22
+                bold: True
+                color: 1, 1, 1, 1
+        ScrollView:
+            GridLayout:
+                id: grid_stat
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 8
+                padding: [12, 12]
 
 <PengaturanScreen>:
     BoxLayout:
@@ -262,43 +385,86 @@
             height: 60
             canvas.before:
                 Color:
-                    rgba: 0.13, 0.45, 0.36, 1
+                    rgba: app.warna_utama
                 Rectangle:
                     pos: self.pos
                     size: self.size
             Label:
-                text: "Pengaturan"
+                text: "Lainnya"
                 font_size: 22
                 bold: True
                 color: 1, 1, 1, 1
-        Widget:
-        Label:
-            text: "Pilih kota untuk jadwal sholat:"
-            size_hint_y: None
-            height: 30
-        Spinner:
-            id: spin_kota
-            text: "Jakarta"
-            size_hint_y: None
-            height: 48
-        Label:
-            text: "(kota lain bisa ditambah sendiri di DAFTAR_KOTA, main.py)"
-            font_size: 12
-            italic: True
-            size_hint_y: None
-            height: 28
-            color: 0.4, 0.4, 0.4, 1
-        Widget:
-        Label:
-            id: lbl_status
-            text: ""
-            color: 0.13, 0.45, 0.36, 1
-            font_size: 14
-        Widget:
-        Button:
-            text: "Simpan Kota"
-            size_hint_y: None
-            height: 52
-            on_release: root.simpan_kota()
-        Widget:
+        ScrollView:
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: self.minimum_height
+                padding: [15, 15]
+                spacing: 10
+                Label:
+                    text: "Kota jadwal sholat"
+                    size_hint_y: None
+                    height: 26
+                    bold: True
+                    color: app.warna_teks
+                Spinner:
+                    id: spin_kota
+                    text: "Jakarta"
+                    size_hint_y: None
+                    height: 46
+                Label:
+                    text: "(kota lain: tambah di DAFTAR_KOTA, main.py)"
+                    font_size: 12
+                    italic: True
+                    size_hint_y: None
+                    height: 24
+                    color: app.warna_pudar
+                Tombol:
+                    text: "Simpan Kota"
+                    size_hint_y: None
+                    height: 48
+                    on_release: root.simpan_kota()
+                Widget:
+                    size_hint_y: None
+                    height: 20
+                Label:
+                    text: "Mode Gelap"
+                    size_hint_y: None
+                    height: 26
+                    bold: True
+                    color: app.warna_teks
+                BoxLayout:
+                    size_hint_y: None
+                    height: 60
+                    spacing: 10
+                    Label:
+                        text: "Tampilan gelap (aktif setelah app dibuka ulang)"
+                        font_size: 13
+                        color: app.warna_pudar
+                        text_size: self.width, None
+                        halign: "left"
+                        valign: "middle"
+                    Switch:
+                        id: sw_gelap
+                        on_active: root.ubah_mode(self, self.active)
+                Widget:
+                    size_hint_y: None
+                    height: 20
+                Tombol:
+                    text: "Lihat Statistik"
+                    gaya: "utama_muda"
+                    gaya_teks: "teks"
+                    size_hint_y: None
+                    height: 48
+                    on_release: root.manager.current = "statistik"
+                Label:
+                    id: lbl_status
+                    text: ""
+                    color: app.warna_teks
+                    font_size: 13
+                    size_hint_y: None
+                    height: 44
+                Widget:
+                    size_hint_y: None
+                    height: 14
         Navigasi:
